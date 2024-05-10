@@ -13,7 +13,5 @@ vlan_id_2="$2"
 # Crear reglas de iptables para el enrutamiento entre las dos redes VLAN
 # sudo iptables -I FORWARD -o ${vlan_id_1} -i ${vlan_id_2} -j ACCEPT
 # sudo iptables -I FORWARD -o ${vlan_id_2} -i ${vlan_id_1} -j ACCEPT
-sudo iptables -I FORWARD ... -j ACCEPT
-sudo iptables -I FORWARD ... -j ACCEPT
 
 echo "Rules to connect VLAN ${vlan_id_1} and VLAN ${vlan_id_2} added"
