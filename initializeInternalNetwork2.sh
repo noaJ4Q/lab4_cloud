@@ -51,37 +51,46 @@ vlan_id="$2"
 network_cdir="$3"
 dhcp_range="$4"
 
-# Create internal interface at OVS with VLAN ID
-echo "Creating internal interface \"$network_name\" at OVS..."
-sudo ovs-vsctl add-port ${ovs_name} ${network_name} tag=${vlan_id} -- set interface ${network_name} type=internal
-
-# Get first and second network IP
+# Creating parameters
 mask=$(calculate_network_mask $network_cdir)
 first_ip="$(calculate_network_ip $network_cdir 1)"
 second_ip="$(calculate_network_ip $network_cdir 2)"
+dhcp_name="ns-dhcp-vlan${vlan_id}"
+veth_name="veth-vlan${vlan_id}"
 
-# Add firts network IP to internal interface
-echo "Adding first IP to internal interface..."
-ip addr add ${first_ip}/${mask} dev ${network_name}
-ip link set ${network_name} up
+# Create veth to connect Namespace with OVS
+echo "Creating veth interfaces..."
+sudo ip link add ${veth_name}-0 type veth peer name ${veth_name}-1
 
 # Create DHCP Namespace
-echo "Creating DHCP Namespace \"ns-dhcp-vlan-${vlan_id}\"..."
-sudo ip netns add ns-dhcp-vlan-${vlan_id}
+echo "Creating DHCP Namespace \"${dhcp_name}\"..."
+sudo ip netns add ${dhcp_name}
 
-# Connect DHCP Namespace to OVS with internal interface
-echo "Connecting DHCP Namespace to OVS with internal interface..."
-sudo ip link set ${network_name} netns ns-dhcp-vlan-${vlan_id}
-sudo ip netns exec ns-dhcp-vlan-${vlan_id} ip link set dev lo up
-sudo ip netns exec ns-dhcp-vlan-${vlan_id} ip link set dev ${network_name} up
+# Connect veth to OVS
+echo "Conneting veth to OVS..."
+sudo ovs-vsctl add-port ${ovs_name} ${veth_name}-0 tag=${vlan_id}
 
-# Add second network IP to DHCP Namespace
-echo "Adding second IP to DHCP Namespace..."
-sudo ip netns exec ns-dhcp-vlan-${vlan_id} ip address add ${second_ip}/${mask} dev ${network_name}
+# Connect veth to Namespace
+echo "Connecting veth to DHCP Namespace..."
+sudo ip link set ${veth_name}-1 netns ${dhcp_name}
+
+# Turn on interfaces
+echo "Turning on interfaces..."
+ip link set dev ${veth_name}-0 up
+sudo ip netns exec ${dhcp_name} ip link set dev lo up
+sudo ip netns exec ${dhcp_name} ip link set dev ${veth_name}-1 up
+
+# Add firts IP to veth0 interface
+echo "Adding first IP veth-OVS interface..."
+ip addr add ${first_ip}/${mask} dev ${veth_name}-0
+
+# Add second IP to DHCP Namespace interface
+echo "Adding second IP to Namespace-veth interface..."
+sudo ip netns exec ${dhcp_name} ip address add ${second_ip}/${mask} dev ${veth_name}-1
 
 # Config DHCP at DHCP Namespace
 echo "Config DHCP Namespace..."
-sudo ip netns exec ns-dhcp-vlan-${vlan_id} dnsmasq --interface=${network_name} \
+sudo ip netns exec ${dhcp_name} dnsmasq --interface=${veth_name}-1 \
 	--dhcp-range=${dhcp_range} --dhcp-option=3,${first_ip} --dhcp-option=6,8.8.8.8,8.8.4.4
 
 echo "Se ha configurado correctamente el entorno para la red ${network_name} con VLAN ID ${vlan_id}."
